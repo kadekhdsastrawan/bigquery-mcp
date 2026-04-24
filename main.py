@@ -83,6 +83,16 @@ def get_bq_client() -> bigquery.Client:
 # ---------------------------------------------------------------------------
 
 USE_CASES_DIR = Path(__file__).parent / "use_cases"
+ACCESSIBLE_TABLES_FILE = Path(__file__).parent / "accessible_tables.yaml"
+TABLE_SCHEMAS_DIR = Path(__file__).parent / "table_schemas"
+
+
+def _load_accessible_tables() -> list[str]:
+    if not ACCESSIBLE_TABLES_FILE.exists():
+        return []
+    with open(ACCESSIBLE_TABLES_FILE, encoding="utf-8") as fh:
+        data = yaml.safe_load(fh)
+    return data.get("tables", []) if data else []
 
 
 def _load_use_cases() -> list[dict]:
@@ -171,6 +181,84 @@ def search_use_cases(query: str) -> str:
         for score, uc in scored
     ]
     return json.dumps(results, indent=2)
+
+
+@mcp.tool()
+def list_tables() -> str:
+    """List all table IDs registered in accessible_tables.yaml."""
+    tables = _load_accessible_tables()
+    if not tables:
+        return "No tables registered. Add fully-qualified table IDs to accessible_tables.yaml."
+    return json.dumps(tables, indent=2)
+
+
+@mcp.tool()
+def get_table_schema(table_id: str) -> str:
+    """Return the locally cached schema for a registered BigQuery table.
+    Run sync_table_schemas first if no local file exists yet.
+
+    Args:
+        table_id: Fully-qualified BigQuery table ID (project.dataset.table).
+    """
+    registered = _load_accessible_tables()
+    if table_id not in registered:
+        return (
+            f"Table '{table_id}' is not in accessible_tables.yaml. "
+            f"Registered tables: {registered}"
+        )
+
+    schema_file = TABLE_SCHEMAS_DIR / f"{table_id}.yaml"
+    if not schema_file.exists():
+        return (
+            f"No local schema found for '{table_id}'. "
+            "Run sync_table_schemas to fetch and cache the schema."
+        )
+
+    with open(schema_file, encoding="utf-8") as fh:
+        return fh.read()
+
+
+@mcp.tool()
+def sync_table_schemas() -> str:
+    """Fetch the latest schema for every table in accessible_tables.yaml from BigQuery
+    and write/overwrite the corresponding file in the table_schemas/ directory.
+    """
+    from datetime import timezone
+
+    registered = _load_accessible_tables()
+    if not registered:
+        return "No tables registered in accessible_tables.yaml."
+
+    TABLE_SCHEMAS_DIR.mkdir(exist_ok=True)
+    client = get_bq_client()
+    synced, failed = [], []
+
+    for table_id in registered:
+        try:
+            table_ref = client.get_table(table_id)
+            columns = [
+                {
+                    "name": field.name,
+                    "type": field.field_type,
+                    "mode": field.mode,
+                    "description": field.description or "",
+                }
+                for field in table_ref.schema
+            ]
+            payload = {
+                "table_id": table_id,
+                "num_rows": table_ref.num_rows,
+                "synced_at": datetime.now(timezone.utc).isoformat(),
+                "columns": columns,
+            }
+            schema_file = TABLE_SCHEMAS_DIR / f"{table_id}.yaml"
+            with open(schema_file, "w", encoding="utf-8") as fh:
+                yaml.dump(payload, fh, allow_unicode=True, sort_keys=False)
+            synced.append(table_id)
+        except Exception as exc:
+            failed.append({"table_id": table_id, "error": str(exc)})
+
+    return json.dumps({"synced": synced, "failed": failed}, indent=2)
 
 
 @mcp.tool()
