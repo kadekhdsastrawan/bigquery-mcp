@@ -1,0 +1,34 @@
+id: marketing_channel_daily_performance
+name: Marketing Channel Daily Performance
+description: >
+  Analyze the daily performance of marketing channels, including metrics such as Total Transaction, GBV, Net Revenue, and Total Cost in USD.
+keywords:
+  - marketing
+  - channel
+  - performance
+  - daily
+  - transaction
+  - gbv
+  - net revenue
+  - cost
+    
+parameters:
+  - name: start_date
+    description: Start date of the analysis
+  - name: end_date
+    description: End date of the analysis
+
+query_template: |
+  SELECT
+    reporting_date,
+    mkt_ads_country_channel AS channel_group,
+    channel_source,
+    SUM(total_transaction) AS total_transaction,
+    SUM(total_gbv_usd) AS total_gbv_usd,
+    SUM(total_net_rev_usd) AS total_net_rev_usd
+  FROM
+    `tvlk-data-mkt-prod.datamart.mkt_channel_level_performance_3day`
+  WHERE
+    reporting_date BETWEEN '{start_date}' AND '{end_date}'
+  GROUP BY
+    1, 2, 3

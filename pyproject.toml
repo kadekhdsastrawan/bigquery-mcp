@@ -1,0 +1,24 @@
+[project]
+name = "bigquery-mcp"
+version = "0.1.0"
+description = "MCP Server for BigQuery use-case management and query execution"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp[cli]>=1.6.0",
+    "google-cloud-bigquery>=3.25.0",
+    "google-auth>=2.38.0",
+    "google-auth-httplib2>=0.2.0",
+    "pyyaml>=6.0.2",
+    "python-dotenv>=1.0.1",
+]
+
+[project.scripts]
+bigquery-mcp = "main:main"
+
+[tool.hatch.build.targets.wheel]
+include = ["main.py", "use_cases/"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
