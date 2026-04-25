@@ -220,15 +220,35 @@ def get_table_schema(table_id: str) -> str:
 
 @mcp.tool()
 def sync_table_schemas() -> str:
-    """Fetch the latest schema for every table in accessible_tables.yaml from BigQuery
-    and write/overwrite the corresponding file in the table_schemas/ directory.
+    """Sync table registry and local schema cache.
+
+    1. Scans all use cases for their 'tables' field and adds any table IDs not
+       already in accessible_tables.yaml (updates the file in place).
+    2. Fetches the latest schema from BigQuery for every registered table and
+       writes/overwrites the corresponding file in table_schemas/.
     """
     from datetime import timezone
 
+    # --- Step 1: discover new tables from use cases ---
     registered = _load_accessible_tables()
-    if not registered:
-        return "No tables registered in accessible_tables.yaml."
+    registered_set = set(registered)
+    newly_added: list[str] = []
 
+    for uc in _load_use_cases():
+        for table_id in uc.get("tables", []):
+            if table_id and table_id not in registered_set:
+                registered.append(table_id)
+                registered_set.add(table_id)
+                newly_added.append(table_id)
+
+    if newly_added:
+        with open(ACCESSIBLE_TABLES_FILE, "w", encoding="utf-8") as fh:
+            yaml.dump({"tables": registered}, fh, allow_unicode=True, sort_keys=False)
+
+    if not registered:
+        return "No tables found in accessible_tables.yaml or use case 'tables' fields."
+
+    # --- Step 2: fetch and cache schemas ---
     TABLE_SCHEMAS_DIR.mkdir(exist_ok=True)
     client = get_bq_client()
     synced, failed = [], []
@@ -258,7 +278,10 @@ def sync_table_schemas() -> str:
         except Exception as exc:
             failed.append({"table_id": table_id, "error": str(exc)})
 
-    return json.dumps({"synced": synced, "failed": failed}, indent=2)
+    return json.dumps(
+        {"newly_registered": newly_added, "synced": synced, "failed": failed},
+        indent=2,
+    )
 
 
 @mcp.tool()
