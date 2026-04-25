@@ -38,7 +38,7 @@ The entire server lives in `main.py` as a single-file [FastMCP](https://github.c
 |---|---|
 | `list_tables` | Returns all table IDs registered in `accessible_tables.yaml` |
 | `get_table_schema` | Reads locally cached schema from `table_schemas/<table_id>.yaml` |
-| `sync_table_schemas` | Fetches live schema from BigQuery for every registered table and writes/overwrites files in `table_schemas/` |
+| `sync_table_schemas` | Scans use cases for new table IDs → updates `accessible_tables.yaml` → fetches live schema for all tables → writes `table_schemas/` |
 | `list_use_cases` | Returns all use case summaries (id, name, description, keywords, parameters) |
 | `search_use_cases` | Token-match search against use case names/descriptions/keywords |
 | `get_use_case` | Returns full YAML detail including `query_template` |
@@ -78,6 +78,8 @@ description: >
 keywords:
   - keyword1
   - keyword2
+tables:
+  - project.dataset.table_name
 parameters:
   - name: param_name
     description: What this parameter means
@@ -85,5 +87,7 @@ query_template: |
   SELECT ...
   WHERE date BETWEEN '{param_name}' AND '{other_param}'
 ```
+
+The `tables` field lists every fully-qualified BigQuery table referenced in `query_template`. When `sync_table_schemas` runs, any table ID listed here that is absent from `accessible_tables.yaml` is added automatically before schemas are fetched.
 
 Parameters are substituted using Python `str.format()` style `{param_name}` placeholders inside `query_template`.
